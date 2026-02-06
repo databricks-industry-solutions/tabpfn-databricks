@@ -1,1 +1,5 @@
 # Check here to get the latest version of the databricks-cli: https://github.com/databricks/cli
+
+# TabPFN packages for notebooks
+tabpfn-client>=0.1.0
+tabpfn-time-series>=0.1.0
