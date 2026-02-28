@@ -1,9 +1,13 @@
 # Databricks Asset Bundle files
 .databricks/
 
-# IDE files
+# IDE / AI tooling files
 .vscode/
 .idea/
+.ai-dev-kit/
+.claude/
+.cursor/
+.mcp.json
 *.swp
 *.swo
 
