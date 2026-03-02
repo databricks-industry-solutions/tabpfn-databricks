@@ -1,5 +1,6 @@
 # Databricks Asset Bundle files
 .databricks/
+.databricks-resources.json
 
 # IDE / AI tooling files
 .vscode/
@@ -25,6 +26,9 @@ build/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+
+# Generated data
+agent/data/
 
 # Environment files
 .env

@@ -5,28 +5,25 @@ variables:
   project_name:
     description: "Name of the project"
     default: "tabpfn-databricks"
-
 targets:
   dev:
     default: true
     mode: development
     workspace:
-      host: https://e2-demo-field-eng.cloud.databricks.com/
+      profile: aws
 
-# Sync notebooks and other files to the workspace
 sync:
   include:
     - "notebooks/*.ipynb"
+    - "agent/*.ipynb"
+    - "scripts/**"
 
-# Databricks Apps resources
 resources:
   apps:
     tabpfn_databricks_app:
       name: "tabpfn-databricks"
       description: "Planning Analytics Hub - Centralized predictive analytics for the entire planning value chain"
       source_code_path: ./apps
-
-      # App permissions (who can access the app)
       permissions:
         - level: CAN_MANAGE
           user_name: ${workspace.current_user.userName}
