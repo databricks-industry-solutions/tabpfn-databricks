@@ -5,3 +5,5 @@ command:
 env:
   - name: DATABRICKS_WAREHOUSE_ID
     value: "<your-warehouse-id>"
+  - name: MULTIAGENT_APP_NAME
+    value: "<your-multiagent-app-name>"

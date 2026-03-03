@@ -84,6 +84,88 @@ def empty_fig(height=380):
     return fig
 
 
+CHAT_PANEL_STYLE = {
+    "position": "fixed",
+    "bottom": "100px",
+    "right": "30px",
+    "width": "420px",
+    "height": "600px",
+    "display": "none",
+    "flexDirection": "column",
+    "zIndex": 1000,
+    "borderRadius": "16px",
+    "boxShadow": "0 8px 32px rgba(0,0,0,0.18)",
+    "overflow": "hidden",
+    "backgroundColor": COLORS["card"],
+    "border": "1px solid #E0E4EA",
+}
+
+
+def _typing_indicator():
+    return html.Div(
+        html.Div(
+            "Thinking…",
+            style={
+                "backgroundColor": "#F0F2F5",
+                "padding": "10px 14px",
+                "borderRadius": "16px 16px 16px 4px",
+                "color": COLORS["muted"],
+                "fontSize": "0.85rem",
+                "fontStyle": "italic",
+            },
+        ),
+        style={"display": "flex", "justifyContent": "flex-start", "marginBottom": "12px"},
+    )
+
+
+def render_chat_messages(messages, typing=False):
+    if not messages:
+        return [html.Div(
+            [
+                html.I(className="fas fa-comments", style={
+                    "fontSize": "2rem", "color": COLORS["muted"], "marginBottom": "12px",
+                }),
+                html.P(
+                    "Ask me anything about your sales data!",
+                    style={"color": COLORS["muted"], "fontSize": "0.9rem", "margin": "0"},
+                ),
+            ],
+            style={"textAlign": "center", "paddingTop": "40%"},
+        )]
+
+    elements = []
+    for msg in messages:
+        if msg["role"] == "user":
+            elements.append(html.Div(
+                html.Div(msg["content"], style={
+                    "backgroundColor": COLORS["primary"], "color": "white",
+                    "padding": "10px 14px", "borderRadius": "16px 16px 4px 16px",
+                    "maxWidth": "80%", "fontSize": "0.9rem",
+                    "lineHeight": "1.5", "wordBreak": "break-word",
+                }),
+                style={"display": "flex", "justifyContent": "flex-end", "marginBottom": "12px"},
+            ))
+        else:
+            elements.append(html.Div(
+                html.Div(
+                    dcc.Markdown(
+                        msg["content"],
+                        style={"margin": "0", "fontSize": "0.9rem", "lineHeight": "1.5"},
+                    ),
+                    style={
+                        "backgroundColor": "#F0F2F5", "padding": "10px 14px",
+                        "borderRadius": "16px 16px 16px 4px", "maxWidth": "85%",
+                        "wordBreak": "break-word", "overflow": "auto",
+                    },
+                ),
+                style={"display": "flex", "justifyContent": "flex-start", "marginBottom": "12px"},
+            ))
+
+    if typing:
+        elements.append(_typing_indicator())
+    return elements
+
+
 def make_card(title, children, height=None):
     style = {}
     if height:
@@ -210,6 +292,89 @@ app.layout = dbc.Container(
         html.Hr(),
         html.P("Enterprise Sales Dashboard | Powered by Databricks",
                className="text-center text-muted py-3", style={"fontSize": "0.85rem"}),
+
+        # --- Chat Interface ---
+        dcc.Store(id="chat-messages-store", data=[]),
+        dcc.Store(id="chat-typing", data=False),
+        html.Div(id="chat-scroll-trigger", style={"display": "none"}),
+
+        html.Div(
+            id="chat-panel",
+            style=CHAT_PANEL_STYLE,
+            children=[
+                html.Div(
+                    [
+                        html.Div([
+                            html.I(className="fas fa-robot me-2"),
+                            html.Span("Sales Analytics Assistant", className="fw-semibold"),
+                        ], style={"display": "flex", "alignItems": "center"}),
+                        html.Button(
+                            html.I(className="fas fa-times"),
+                            id="chat-close-btn",
+                            className="btn btn-link text-white p-0",
+                            style={"fontSize": "1.1rem", "lineHeight": "1", "textDecoration": "none"},
+                        ),
+                    ],
+                    style={
+                        "display": "flex", "justifyContent": "space-between",
+                        "alignItems": "center", "padding": "14px 18px",
+                        "backgroundColor": COLORS["primary"], "color": "white",
+                        "fontSize": "0.95rem",
+                    },
+                ),
+                html.Div(
+                    id="chat-messages",
+                    children=render_chat_messages([]),
+                    style={"flex": "1", "overflowY": "auto", "padding": "16px"},
+                ),
+                html.Div(
+                    [
+                        dcc.Input(
+                            id="chat-input", type="text",
+                            placeholder="Ask about sales data…",
+                            debounce=False, disabled=False,
+                            style={
+                                "flex": "1", "border": "1px solid #DEE2E8",
+                                "borderRadius": "8px", "padding": "10px 14px",
+                                "fontSize": "0.9rem", "outline": "none",
+                            },
+                            n_submit=0,
+                        ),
+                        html.Button(
+                            html.I(className="fas fa-paper-plane"),
+                            id="chat-send-btn", className="btn", disabled=False,
+                            style={
+                                "backgroundColor": COLORS["accent"], "color": "white",
+                                "borderRadius": "8px", "padding": "8px 14px",
+                                "marginLeft": "8px", "border": "none", "fontSize": "0.9rem",
+                            },
+                            n_clicks=0,
+                        ),
+                    ],
+                    style={
+                        "display": "flex", "alignItems": "center",
+                        "padding": "12px 16px", "borderTop": "1px solid #E0E4EA",
+                        "backgroundColor": "#FAFBFC",
+                    },
+                ),
+            ],
+        ),
+
+        html.Button(
+            html.I(className="fas fa-comments", style={"fontSize": "1.4rem"}),
+            id="chat-toggle-btn", className="btn",
+            style={
+                "position": "fixed", "bottom": "30px", "right": "30px",
+                "width": "56px", "height": "56px", "borderRadius": "50%",
+                "backgroundColor": COLORS["accent"], "color": "white",
+                "border": "none",
+                "boxShadow": "0 4px 16px rgba(74, 144, 217, 0.4)",
+                "zIndex": 1001, "display": "flex",
+                "alignItems": "center", "justifyContent": "center",
+                "cursor": "pointer",
+            },
+            n_clicks=0,
+        ),
     ],
     fluid=True,
     style={"backgroundColor": COLORS["bg"], "minHeight": "100vh", "padding": "20px 30px"},
@@ -491,6 +656,104 @@ def update_top_accounts(selected_regions, loaded):
             {"if": {"row_index": "odd"}, "backgroundColor": "#F9FAFB"},
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# Chat callbacks
+# ---------------------------------------------------------------------------
+
+
+@app.callback(
+    Output("chat-panel", "style"),
+    [Input("chat-toggle-btn", "n_clicks"), Input("chat-close-btn", "n_clicks")],
+    State("chat-panel", "style"),
+    prevent_initial_call=True,
+)
+def toggle_chat(toggle_clicks, close_clicks, current_style):
+    ctx = dash.callback_context
+    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    style = dict(current_style) if current_style else dict(CHAT_PANEL_STYLE)
+    if triggered_id == "chat-close-btn":
+        style["display"] = "none"
+    else:
+        style["display"] = "none" if style.get("display") == "flex" else "flex"
+    return style
+
+
+app.clientside_callback(
+    """
+    function(nClicks, nSubmit, inputValue, messages) {
+        if (!inputValue || !inputValue.trim()) {
+            return [
+                window.dash_clientside.no_update,
+                window.dash_clientside.no_update,
+                window.dash_clientside.no_update
+            ];
+        }
+        var updated = (messages || []).slice();
+        updated.push({role: 'user', content: inputValue.trim()});
+        return [updated, true, ''];
+    }
+    """,
+    [Output("chat-messages-store", "data"),
+     Output("chat-typing", "data"),
+     Output("chat-input", "value")],
+    [Input("chat-send-btn", "n_clicks"), Input("chat-input", "n_submit")],
+    [State("chat-input", "value"), State("chat-messages-store", "data")],
+    prevent_initial_call=True,
+)
+
+
+@app.callback(
+    [Output("chat-messages-store", "data", allow_duplicate=True),
+     Output("chat-typing", "data", allow_duplicate=True)],
+    Input("chat-typing", "data"),
+    State("chat-messages-store", "data"),
+    prevent_initial_call=True,
+)
+def call_agent(typing, messages):
+    if not typing:
+        raise dash.exceptions.PreventUpdate
+    messages = list(messages or [])
+    try:
+        response_text = backend.chat_with_agent(messages)
+        messages.append({"role": "assistant", "content": response_text})
+    except Exception as exc:
+        logger.error("Chat error: %s", exc, exc_info=True)
+        messages.append({"role": "assistant", "content": f"Sorry, I encountered an error: {exc}"})
+    return messages, False
+
+
+@app.callback(
+    Output("chat-messages", "children"),
+    [Input("chat-messages-store", "data"), Input("chat-typing", "data")],
+)
+def render_messages_cb(messages, typing):
+    return render_chat_messages(messages or [], typing=typing)
+
+
+@app.callback(
+    [Output("chat-send-btn", "disabled"), Output("chat-input", "disabled")],
+    Input("chat-typing", "data"),
+)
+def toggle_chat_input(typing):
+    return typing, typing
+
+
+app.clientside_callback(
+    """
+    function(children) {
+        setTimeout(function() {
+            var el = document.getElementById('chat-messages');
+            if (el) el.scrollTop = el.scrollHeight;
+        }, 100);
+        return '';
+    }
+    """,
+    Output("chat-scroll-trigger", "children"),
+    Input("chat-messages", "children"),
+    prevent_initial_call=True,
+)
 
 
 if __name__ == "__main__":

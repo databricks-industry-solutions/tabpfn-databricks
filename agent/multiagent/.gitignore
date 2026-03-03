@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+e2e-chatbot-app-next/
+backend.log
+frontend.log
+.uv/

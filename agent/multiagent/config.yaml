@@ -1,0 +1,39 @@
+## Multi-Agent Orchestrator Configuration
+## Edit this file to configure the subagents for your environment.
+
+# The LLM model the orchestrator uses to route requests.
+orchestrator_model: "databricks-claude-sonnet-4-5"
+
+subagents:
+  - name: genie
+    type: genie
+    # TODO: Replace with your actual Genie Space ID (UUID from the Genie space URL).
+    # Run notebook `agent/01_create_genie_space.ipynb` to create one, then paste
+    # the space_id here.
+    space_id: "01f11473195519d183ef8629160fa6a9"
+    description: >
+      Query the Enterprise Sales Analytics Genie space for structured data
+      analysis. Use this for questions about sales pipeline, revenue, accounts,
+      reps, products, opportunity trends, and quota attainment.
+
+  # Uncomment and configure additional subagents as needed:
+  #
+  # - name: app_agent
+  #   type: app
+  #   endpoint: "<YOUR-APP-AGENT-NAME>"
+  #   description: >
+  #     Query a specialist agent deployed as a Databricks App.
+  #
+  # - name: knowledge_assistant
+  #   type: serving_endpoint
+  #   endpoint: "<YOUR-KNOWLEDGE-ASSISTANT-ENDPOINT>"
+  #   description: >
+  #     Query the knowledge-assistant for documentation lookups.
+  #     The endpoint must have task type agent/v1/responses.
+  #
+  # - name: model_endpoint
+  #   type: serving_endpoint
+  #   endpoint: "<YOUR-SERVING-ENDPOINT>"
+  #   description: >
+  #     Query a model hosted on Databricks Model Serving.
+  #     The endpoint must have task type agent/v1/responses.

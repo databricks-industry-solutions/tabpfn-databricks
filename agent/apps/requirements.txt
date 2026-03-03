@@ -2,3 +2,4 @@ dash-bootstrap-components
 plotly>=5.18.0
 pandas
 databricks-sql-connector
+databricks-openai

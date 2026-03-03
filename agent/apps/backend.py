@@ -124,3 +124,22 @@ def get_account_target_summary() -> pd.DataFrame:
 def clear_cache():
     _cache.clear()
     logger.info("Cache cleared")
+
+
+def chat_with_agent(messages: list[dict]) -> str:
+    """Send conversation history to the multiagent and return the response."""
+    from databricks_openai import DatabricksOpenAI
+
+    app_name = os.getenv("MULTIAGENT_APP_NAME")
+    if not app_name:
+        raise RuntimeError(
+            "MULTIAGENT_APP_NAME environment variable is not set. "
+            "Set it to the name of the deployed multiagent Databricks App."
+        )
+
+    client = DatabricksOpenAI()
+    response = client.responses.create(
+        model=f"apps/{app_name}",
+        input=messages,
+    )
+    return response.output_text

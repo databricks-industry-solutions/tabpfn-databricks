@@ -5,6 +5,10 @@ variables:
   project_name:
     description: "Name of the project"
     default: "tabpfn-databricks"
+  genie_space_id:
+    description: "Genie Space ID for the Enterprise Sales Analytics space"
+    default: "01f11473195519d183ef8629160fa6a9"
+
 targets:
   dev:
     default: true
@@ -19,6 +23,10 @@ sync:
     - "scripts/**"
 
 resources:
+  experiments:
+    multiagent_experiment:
+      name: /Users/${workspace.current_user.userName}/${bundle.name}-multiagent-${bundle.target}
+
   apps:
     tabpfn_databricks_app:
       name: "tabpfn-databricks"
@@ -27,3 +35,22 @@ resources:
       permissions:
         - level: CAN_MANAGE
           user_name: ${workspace.current_user.userName}
+
+    sales_multiagent:
+      name: "${bundle.target}-sales-multiagent"
+      description: "Multi-agent orchestrator for Enterprise Sales Analytics with Genie subagent"
+      source_code_path: ./agent/multiagent
+
+      resources:
+        - name: "experiment"
+          experiment:
+            experiment_id: "${resources.experiments.multiagent_experiment.id}"
+            permission: "CAN_MANAGE"
+
+        # Uncomment after creating the Genie Space (run agent/01_create_genie_space.ipynb)
+        # and setting the genie_space_id variable:
+        - name: "genie_space"
+          genie_space:
+            name: "Enterprise Sales Analytics"
+            space_id: "${var.genie_space_id}"
+            permission: "CAN_RUN"
