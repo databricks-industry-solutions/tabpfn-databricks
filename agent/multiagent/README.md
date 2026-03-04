@@ -9,6 +9,7 @@ The orchestrator routes user questions to the most appropriate backend:
 | Backend | Type | How it's queried |
 |---------|------|-----------------|
 | **Genie Space** | Structured data | Databricks MCP server |
+| **External MCP** | External API tools | Databricks MCP connection |
 | **Serving Endpoint** | Model inference | Responses API |
 | **Databricks App** | Specialist agent | Responses API |
 

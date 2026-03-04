@@ -13,8 +13,27 @@ subagents:
     space_id: "01f11473195519d183ef8629160fa6a9"
     description: >
       Query the Enterprise Sales Analytics Genie space for structured data
-      analysis. Use this for questions about sales pipeline, revenue, accounts,
-      reps, products, opportunity trends, and quota attainment.
+      analysis. Supports complex SQL with JOINs, CTEs, window functions, and
+      aggregations in a single query. Use this for questions about sales
+      pipeline, revenue, accounts, reps, products, opportunity trends, and
+      quota attainment. Key schema notes: opportunities.stage values are
+      'Closed/Won', 'Closed/Lost', 'Negotiation', 'Qualification',
+      'Discovery', 'Proposal'. Use 'Closed/Won' for won deals. Monetary
+      columns: opportunity_products.line_acv (line item ACV),
+      accounts.annual_revenue_mm. There are 6 products, ~500 accounts,
+      ~3500 opportunities.
+
+  - name: tabpfn
+    type: mcp
+    # The Unity Catalog connection name configured with is_mcp_connection: 'true'.
+    connection_name: "tabpfn-external-mcp"
+    # Display name exposed to the MCP protocol. Defaults to `name` if omitted.
+    server_name: "tabpfn-external-mcp"
+    # Seconds to wait for each MCP tool call to complete (default: 120).
+    timeout_seconds: 120
+    description: >
+      Query the TabPFN external MCP server for tabular prediction tasks.
+      Use this for classification and regression on structured tabular data.
 
   # Uncomment and configure additional subagents as needed:
   #
@@ -37,3 +56,11 @@ subagents:
   #   description: >
   #     Query a model hosted on Databricks Model Serving.
   #     The endpoint must have task type agent/v1/responses.
+  #
+  # - name: external_tools
+  #   type: mcp
+  #   connection_name: "<YOUR-UC-CONNECTION-NAME>"
+  #   server_name: "<OPTIONAL-DISPLAY-NAME>"  # defaults to `name` if omitted
+  #   description: >
+  #     Query an external MCP server via a Unity Catalog connection.
+  #     The connection must have is_mcp_connection: 'true'.

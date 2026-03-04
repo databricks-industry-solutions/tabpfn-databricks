@@ -6,7 +6,7 @@ file to set your Genie Space ID, add serving-endpoint subagents, or change the
 orchestrator model — no code changes required.
 """
 
-from contextlib import nullcontext
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -29,6 +29,48 @@ from agent_server.utils import (
     process_agent_stream_events,
     sanitize_output_items,
 )
+
+# ---------------------------------------------------------------------------
+# Patch: Databricks external MCP proxy returns NDJSON (multiple JSON-RPC
+# messages on separate lines) but the MCP client expects a single object.
+# Split on newlines and deliver each message individually.
+# ---------------------------------------------------------------------------
+import logging as _logging
+
+import httpx as _httpx
+from mcp.client.streamable_http import StreamableHTTPTransport
+from mcp.shared.message import SessionMessage
+from mcp.types import JSONRPCMessage
+
+_patch_logger = _logging.getLogger(__name__)
+
+_original_handle_json = StreamableHTTPTransport._handle_json_response
+
+
+async def _patched_handle_json_response(
+    self,
+    response: _httpx.Response,
+    read_stream_writer,
+    is_initialization: bool = False,
+) -> None:
+    content = await response.aread()
+    lines = [line for line in content.split(b"\n") if line.strip()]
+    if len(lines) <= 1:
+        return await _original_handle_json(
+            self, response, read_stream_writer, is_initialization
+        )
+    _patch_logger.debug("NDJSON response with %d messages — splitting", len(lines))
+    for line in lines:
+        try:
+            message = JSONRPCMessage.model_validate_json(line)
+            if is_initialization:
+                self._maybe_extract_protocol_version_from_message(message)
+            await read_stream_writer.send(SessionMessage(message))
+        except Exception:
+            _patch_logger.exception("Error parsing NDJSON line: %s", line[:200])
+
+
+StreamableHTTPTransport._handle_json_response = _patched_handle_json_response
 
 # ---------------------------------------------------------------------------
 # Load configuration
@@ -80,7 +122,8 @@ def _make_subagent_tool(subagent: dict):
     return function_tool(_call)
 
 
-subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS if sa["type"] != "genie"]
+_MCP_TYPES = {"genie", "mcp"}
+subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS if sa["type"] not in _MCP_TYPES]
 
 
 # ---------------------------------------------------------------------------
@@ -88,15 +131,29 @@ subagent_tools = [_make_subagent_tool(sa) for sa in SUBAGENTS if sa["type"] != "
 # ---------------------------------------------------------------------------
 
 
-async def init_mcp_server():
-    """Create a Genie MCP server if a genie subagent is configured."""
-    genie = next((sa for sa in SUBAGENTS if sa["type"] == "genie"), None)
-    if genie is None:
-        return nullcontext()
-    return McpServer(
-        url=build_mcp_url(f"/api/2.0/mcp/genie/{genie['space_id']}"),
-        name=genie["description"],
-    )
+_DEFAULT_MCP_TIMEOUT = 20
+_EXTERNAL_MCP_TIMEOUT = 120
+
+
+async def init_mcp_servers():
+    """Create MCP servers for all genie and external mcp subagents."""
+    servers = []
+    for sa in SUBAGENTS:
+        if sa["type"] == "genie":
+            servers.append(McpServer(
+                url=build_mcp_url(f"/api/2.0/mcp/genie/{sa['space_id']}"),
+                name=sa["description"],
+                client_session_timeout_seconds=_DEFAULT_MCP_TIMEOUT,
+            ))
+        elif sa["type"] == "mcp":
+            servers.append(McpServer(
+                url=build_mcp_url(f"/api/2.0/mcp/external/{sa['connection_name']}"),
+                name=sa.get("server_name", sa["name"]),
+                client_session_timeout_seconds=sa.get(
+                    "timeout_seconds", _EXTERNAL_MCP_TIMEOUT
+                ),
+            ))
+    return servers
 
 
 def _build_instructions() -> str:
@@ -110,24 +167,47 @@ def _build_instructions() -> str:
             lines.append(
                 f"- Use the Genie MCP tools for: {sa['description'].strip()}"
             )
+        elif sa["type"] == "mcp":
+            lines.append(
+                f"- Use the {sa['name']} MCP tools for: {sa['description'].strip()}"
+            )
         else:
             lines.append(
                 f"- Use query_{sa['name']} for: {sa['description'].strip()}"
             )
     lines.append(
-        "\nIf the user's question doesn't clearly match any tool, ask for "
-        "clarification.  Always prefer the most specific tool available."
+        "\nCRITICAL TIME CONSTRAINT: You have a 120-second hard timeout. "
+        "Every Genie query+poll cycle takes ~15 seconds. Plan accordingly."
+        "\n\nEFFICIENCY RULES (MANDATORY):"
+        "\n1. NEVER issue more than 2 Genie queries total. Combine ALL data "
+        "needs into ONE comprehensive query using JOINs, CTEs, window "
+        "functions, and subqueries."
+        "\n2. Include ALL computed columns you will need later (LTV, rankings, "
+        "next-product labels, etc.) in that single query. Do NOT make a "
+        "separate query for aggregations you could compute inline."
+        "\n3. If a query returns empty results, check the schema hints in the "
+        "tool description before retrying — do NOT run exploratory queries."
+        "\n4. After getting Genie data, go DIRECTLY to TabPFN. Do not make "
+        "additional Genie queries to 'refine' or 'get more data'."
+        "\n5. Keep inline datasets ≤100 rows to stay within token limits. "
+        "Use LIMIT and ORDER BY RAND() in SQL to sample."
+        "\n\nMULTI-TOOL WORKFLOW (Genie → TabPFN):"
+        "\n- Query Genie ONCE for all training data, labels, and metadata."
+        "\n- Transform data in-context, then call TabPFN ONCE."
+        "\n- Generate the final report from TabPFN results in-context."
+        "\n\nIf the user's question doesn't clearly match any tool, ask for "
+        "clarification. Always prefer the most specific tool available."
     )
     return "\n".join(lines)
 
 
-def create_orchestrator_agent(mcp_server: McpServer) -> Agent:
+def create_orchestrator_agent(mcp_servers: list[McpServer]) -> Agent:
     """Build the orchestrator agent with all tools and MCP servers."""
     return Agent(
         name="Orchestrator",
         instructions=_build_instructions(),
         model=ORCHESTRATOR_MODEL,
-        mcp_servers=[mcp_server] if mcp_server else [],
+        mcp_servers=mcp_servers,
         tools=subagent_tools,
     )
 
@@ -158,8 +238,9 @@ def _normalize_input(request: ResponsesAgentRequest) -> list[dict]:
 
 @invoke()
 async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentResponse:
-    async with await init_mcp_server() as mcp_server:
-        agent = create_orchestrator_agent(mcp_server)
+    async with AsyncExitStack() as stack:
+        mcp_servers = [await stack.enter_async_context(s) for s in await init_mcp_servers()]
+        agent = create_orchestrator_agent(mcp_servers)
         messages = _normalize_input(request)
         result = await Runner.run(agent, messages)
         return ResponsesAgentResponse(output=sanitize_output_items(result.new_items))
@@ -167,8 +248,9 @@ async def invoke_handler(request: ResponsesAgentRequest) -> ResponsesAgentRespon
 
 @stream()
 async def stream_handler(request: ResponsesAgentRequest) -> AsyncGenerator[ResponsesAgentStreamEvent, None]:
-    async with await init_mcp_server() as mcp_server:
-        agent = create_orchestrator_agent(mcp_server)
+    async with AsyncExitStack() as stack:
+        mcp_servers = [await stack.enter_async_context(s) for s in await init_mcp_servers()]
+        agent = create_orchestrator_agent(mcp_servers)
         messages = _normalize_input(request)
         result = Runner.run_streamed(agent, input=messages)
 

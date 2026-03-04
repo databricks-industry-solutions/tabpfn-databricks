@@ -54,3 +54,9 @@ resources:
             name: "Enterprise Sales Analytics"
             space_id: "${var.genie_space_id}"
             permission: "CAN_RUN"
+
+        - name: "tabpfn_mcp"
+          uc_securable:
+            securable_type: "CONNECTION"
+            securable_full_name: "tabpfn-external-mcp"
+            permission: "USE_CONNECTION"
