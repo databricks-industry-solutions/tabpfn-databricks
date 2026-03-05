@@ -297,16 +297,36 @@ app.layout = dbc.Container(
         dcc.Store(id="chat-messages-store", data=[]),
         dcc.Store(id="chat-typing", data=False),
         html.Div(id="chat-scroll-trigger", style={"display": "none"}),
+        html.Div(id="resize-init-done", style={"display": "none"}),
+        html.Div(id="chat-toggle-done", style={"display": "none"}),
 
         html.Div(
             id="chat-panel",
             style=CHAT_PANEL_STYLE,
             children=[
+                html.Div(id="chat-resize-top", style={
+                    "position": "absolute", "top": "0", "left": "0", "right": "0",
+                    "height": "6px", "cursor": "ns-resize", "zIndex": 1010,
+                }),
+                html.Div(id="chat-resize-left", style={
+                    "position": "absolute", "top": "0", "left": "0", "bottom": "0",
+                    "width": "6px", "cursor": "ew-resize", "zIndex": 1010,
+                }),
+                html.Div(id="chat-resize-corner", style={
+                    "position": "absolute", "top": "0", "left": "0",
+                    "width": "16px", "height": "16px", "cursor": "nw-resize",
+                    "zIndex": 1011,
+                }),
                 html.Div(
                     [
                         html.Div([
                             html.I(className="fas fa-robot me-2"),
-                            html.Span("Sales Analytics Assistant", className="fw-semibold"),
+                            html.Div([
+                                html.Span("Sales Analytics Assistant", className="fw-semibold"),
+                                html.Div("powered by Databricks Genie and TabPFN", style={
+                                    "fontSize": "0.7rem", "opacity": "0.75", "fontWeight": "normal",
+                                }),
+                            ]),
                         ], style={"display": "flex", "alignItems": "center"}),
                         html.Button(
                             html.I(className="fas fa-times"),
@@ -663,21 +683,86 @@ def update_top_accounts(selected_regions, loaded):
 # ---------------------------------------------------------------------------
 
 
-@app.callback(
-    Output("chat-panel", "style"),
+app.clientside_callback(
+    """
+    function(toggleClicks, closeClicks) {
+        var panel = document.getElementById('chat-panel');
+        if (!panel) return window.dash_clientside.no_update;
+        var ctx = window.dash_clientside.callback_context;
+        if (!ctx.triggered || !ctx.triggered.length) return window.dash_clientside.no_update;
+        var tid = ctx.triggered[0].prop_id.split('.')[0];
+        if (tid === 'chat-close-btn') {
+            panel.style.display = 'none';
+        } else {
+            panel.style.display = (panel.style.display === 'flex') ? 'none' : 'flex';
+        }
+        return '';
+    }
+    """,
+    Output("chat-toggle-done", "children"),
     [Input("chat-toggle-btn", "n_clicks"), Input("chat-close-btn", "n_clicks")],
-    State("chat-panel", "style"),
     prevent_initial_call=True,
 )
-def toggle_chat(toggle_clicks, close_clicks, current_style):
-    ctx = dash.callback_context
-    triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    style = dict(current_style) if current_style else dict(CHAT_PANEL_STYLE)
-    if triggered_id == "chat-close-btn":
-        style["display"] = "none"
-    else:
-        style["display"] = "none" if style.get("display") == "flex" else "flex"
-    return style
+
+
+app.clientside_callback(
+    """
+    function(n) {
+        if (window._chatResizeInit) return window.dash_clientside.no_update;
+        window._chatResizeInit = true;
+
+        var panel = document.getElementById('chat-panel');
+        if (!panel) return window.dash_clientside.no_update;
+
+        var minW = 320, minH = 350;
+        var resizing = null, startX, startY, startW, startH;
+
+        document.addEventListener('mousemove', function(e) {
+            if (!resizing) return;
+            e.preventDefault();
+            var dx = startX - e.clientX;
+            var dy = startY - e.clientY;
+            var maxW = window.innerWidth - 60;
+            var maxH = window.innerHeight - 140;
+            if (resizing === 'left' || resizing === 'corner') {
+                panel.style.width = Math.min(maxW, Math.max(minW, startW + dx)) + 'px';
+            }
+            if (resizing === 'top' || resizing === 'corner') {
+                panel.style.height = Math.min(maxH, Math.max(minH, startH + dy)) + 'px';
+            }
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (resizing) {
+                resizing = null;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+
+        ['chat-resize-left', 'chat-resize-top', 'chat-resize-corner'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var dir = id.replace('chat-resize-', '');
+            el.addEventListener('mousedown', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                resizing = dir;
+                startX = e.clientX;
+                startY = e.clientY;
+                startW = panel.offsetWidth;
+                startH = panel.offsetHeight;
+                document.body.style.userSelect = 'none';
+            });
+        });
+
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("resize-init-done", "children"),
+    Input("startup-trigger", "n_intervals"),
+    prevent_initial_call=False,
+)
 
 
 app.clientside_callback(
