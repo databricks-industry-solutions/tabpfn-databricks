@@ -10,20 +10,20 @@ A multi-agent orchestrator that routes natural-language questions to the right b
 
 ## End-to-end setup
 
-Everything below runs from the **repository root** unless noted otherwise.
+All paths below are relative to this `agent/` directory.
 
 ### 1. Generate the sales data
 
-Open `agent/00_generate_sales_data.ipynb` on your Databricks workspace (or attach it to a cluster) and run all cells. This creates seven Delta tables in `tabpfn_databricks.agent`.
+Open `00_generate_sales_data.ipynb` on your Databricks workspace (or attach it to a cluster) and run all cells. This creates seven Delta tables in `tabpfn_databricks.agent`.
 
 ### 2. Create the Genie Space
 
-Run `agent/01_create_genie_space.ipynb` on the same workspace. It annotates the tables with descriptions and creates (or updates) a Genie Space. Copy the `space_id` printed at the end.
+Run `01_create_genie_space.ipynb` on the same workspace. It annotates the tables with descriptions and creates (or updates) a Genie Space. Copy the `space_id` printed at the end.
 
 ### 3. Configure the orchestrator
 
 ```bash
-cd agent/multiagent
+cd multiagent
 cp .env.example .env
 ```
 
@@ -34,7 +34,7 @@ Edit `.env`:
 | `DATABRICKS_CONFIG_PROFILE` | Your CLI profile name (or set `DATABRICKS_HOST` + `DATABRICKS_TOKEN` instead) |
 | `MLFLOW_EXPERIMENT_ID` | *(optional)* An MLflow experiment ID for tracing |
 
-Then edit `config.yaml` and paste your Genie Space ID into the `space_id` field:
+Then edit `multiagent/config.yaml` and paste your Genie Space ID into the `space_id` field:
 
 ```yaml
 subagents:
@@ -46,7 +46,7 @@ subagents:
 ### 4. Run locally
 
 ```bash
-cd agent/multiagent
+cd multiagent
 uv run start-app          # backend (port 8000) + chat UI (port 3000)
 uv run start-app --no-ui  # backend only
 ```
@@ -55,7 +55,7 @@ The chat UI is auto-cloned from `databricks/app-templates` on first run.
 
 ### 5. Deploy to Databricks
 
-From the repo root:
+From the **repository root**:
 
 ```bash
 databricks bundle deploy
@@ -67,7 +67,7 @@ The bundle (`databricks.yml`) deploys the app and grants it access to the Genie 
 ### 6. Evaluate the agent
 
 ```bash
-cd agent/multiagent
+cd multiagent
 uv run agent-evaluate
 ```
 
@@ -79,6 +79,7 @@ Runs a conversation simulator with MLflow scorers (completeness, safety, fluency
 agent/
 ├── 00_generate_sales_data.ipynb   # Step 1 — create Delta tables
 ├── 01_create_genie_space.ipynb    # Step 2 — create Genie Space
+├── README.md                      # ← you are here
 └── multiagent/
     ├── config.yaml                # Subagent definitions (edit this)
     ├── .env.example               # Environment template
@@ -95,7 +96,7 @@ agent/
 
 ## Adding subagents
 
-Edit `config.yaml` to wire up additional backends. Supported types:
+Edit `multiagent/config.yaml` to wire up additional backends. Supported types:
 
 | Type | Connects to | Key config |
 |---|---|---|
@@ -104,4 +105,4 @@ Edit `config.yaml` to wire up additional backends. Supported types:
 | `serving_endpoint` | Model Serving / agent endpoint | `endpoint` |
 | `app` | Another Databricks App | `endpoint` |
 
-See the commented examples in `config.yaml`.
+See the commented examples in `multiagent/config.yaml`.
