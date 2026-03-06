@@ -1,4 +1,5 @@
 import logging
+import threading
 
 import dash
 import dash_bootstrap_components as dbc
@@ -238,6 +239,35 @@ app.layout = dbc.Container(
             dbc.Col(make_card("Average Deal Size Trend", dcc.Graph(id="fig-avg-trend", figure=empty_fig(), config={"displayModeBar": False})), md=6),
         ], className="g-3 mb-4"),
 
+        # --- Promotion Analysis ---
+        html.Hr(className="my-4"),
+        html.H4([html.I(className="fas fa-tags me-2"), "Promotion Analysis"],
+                className="fw-bold mb-3", style={"color": COLORS["primary"]}),
+
+        dbc.Row([
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Promotions Applied", className="text-muted mb-1", style={"fontSize": "0.85rem"}),
+                html.H4(id="promo-count", className="fw-bold mb-0", style={"color": COLORS["primary"]}),
+            ]), className="shadow-sm border-0 h-100"), md=3),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Effect Rate", className="text-muted mb-1", style={"fontSize": "0.85rem"}),
+                html.H4(id="promo-effect-rate", className="fw-bold mb-0", style={"color": COLORS["accent"]}),
+            ]), className="shadow-sm border-0 h-100"), md=3),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Promoted Win Rate", className="text-muted mb-1", style={"fontSize": "0.85rem"}),
+                html.H4(id="promo-win-rate", className="fw-bold mb-0", style={"color": COLORS["success"]}),
+            ]), className="shadow-sm border-0 h-100"), md=3),
+            dbc.Col(dbc.Card(dbc.CardBody([
+                html.P("Non-Promoted Win Rate", className="text-muted mb-1", style={"fontSize": "0.85rem"}),
+                html.H4(id="no-promo-win-rate", className="fw-bold mb-0", style={"color": COLORS["muted"]}),
+            ]), className="shadow-sm border-0 h-100"), md=3),
+        ], className="g-3 mb-4"),
+
+        dbc.Row([
+            dbc.Col(make_card("Win Rate by Promotion Type", dcc.Graph(id="fig-promo-winrate", figure=empty_fig(), config={"displayModeBar": False})), md=6),
+            dbc.Col(make_card("Avg Deal Size: Promoted vs Non-Promoted", dcc.Graph(id="fig-promo-acv", figure=empty_fig(), config={"displayModeBar": False})), md=6),
+        ], className="g-3 mb-4"),
+
         # --- Region Analysis ---
         html.Hr(className="my-4"),
         html.H4([html.I(className="fas fa-globe me-2"), "Region Analysis"],
@@ -296,6 +326,7 @@ app.layout = dbc.Container(
         # --- Chat Interface ---
         dcc.Store(id="chat-messages-store", data=[]),
         dcc.Store(id="chat-typing", data=False),
+        dcc.Interval(id="agent-poll", interval=2000, disabled=True),
         html.Div(id="chat-scroll-trigger", style={"display": "none"}),
         html.Div(id="resize-init-done", style={"display": "none"}),
         html.Div(id="chat-toggle-done", style={"display": "none"}),
@@ -538,6 +569,98 @@ def load_data_and_build_static(_n):
         fig_ps, fig_ls, fig_pr, fig_sp, fig_rp,
         fig_ot, fig_at, fig_rt, fig_st,
         region_opts, account_opts,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Promotion analysis callback
+# ---------------------------------------------------------------------------
+
+@app.callback(
+    [
+        Output("promo-count", "children"),
+        Output("promo-effect-rate", "children"),
+        Output("promo-win-rate", "children"),
+        Output("no-promo-win-rate", "children"),
+        Output("fig-promo-winrate", "figure"),
+        Output("fig-promo-acv", "figure"),
+    ],
+    Input("data-loaded", "data"),
+)
+def update_promotion_section(loaded):
+    if not loaded:
+        return ("—", "—", "—", "—", empty_fig(), empty_fig())
+
+    df = _prep_df(
+        backend.get_promotion_analysis(),
+        date_col=None,
+        numeric_cols=["acv", "days_in_pipeline", "is_won"],
+    )
+    df["has_promotion"] = df["has_promotion"].astype(bool)
+
+    promo_df = df[df["has_promotion"]]
+    no_promo_df = df[~df["has_promotion"]]
+
+    promo_count = len(promo_df)
+    effect_rate = promo_df["had_effect"].astype(bool).mean() if len(promo_df) > 0 else 0
+
+    closed_promo = promo_df[promo_df["stage"].isin(["Closed/Won", "Closed/Lost"])]
+    closed_no_promo = no_promo_df[no_promo_df["stage"].isin(["Closed/Won", "Closed/Lost"])]
+
+    win_rate_promo = closed_promo["is_won"].mean() if len(closed_promo) > 0 else 0
+    win_rate_no_promo = closed_no_promo["is_won"].mean() if len(closed_no_promo) > 0 else 0
+
+    # Win rate by promotion type
+    closed = df[df["stage"].isin(["Closed/Won", "Closed/Lost"])].copy()
+    closed["promo_label"] = closed["promotion_type"].fillna("No Promotion")
+    wr_by_type = closed.groupby("promo_label")["is_won"].mean().reset_index()
+    wr_by_type.columns = ["Promotion Type", "Win Rate"]
+
+    type_order = ["No Promotion", "Discount", "Delivery Support", "Enablement"]
+    wr_by_type["Promotion Type"] = pd.Categorical(
+        wr_by_type["Promotion Type"], categories=type_order, ordered=True,
+    )
+    wr_by_type = wr_by_type.sort_values("Promotion Type")
+
+    promo_colors = {
+        "No Promotion": COLORS["muted"],
+        "Discount": "#4A90D9",
+        "Delivery Support": "#F5A623",
+        "Enablement": "#27AE60",
+    }
+    fig_wr = px.bar(
+        wr_by_type, x="Promotion Type", y="Win Rate", color="Promotion Type",
+        text_auto=".1%", color_discrete_map=promo_colors,
+    )
+    fig_wr.update_traces(textposition="outside")
+    chart_layout(fig_wr)
+    fig_wr.update_layout(showlegend=False, yaxis_tickformat=".0%")
+
+    # Average ACV by promotion type
+    acv_data = df.copy()
+    acv_data["promo_label"] = acv_data["promotion_type"].fillna("No Promotion")
+    avg_acv = acv_data.groupby("promo_label")["acv"].mean().reset_index()
+    avg_acv.columns = ["Promotion Type", "Average ACV"]
+    avg_acv["Promotion Type"] = pd.Categorical(
+        avg_acv["Promotion Type"], categories=type_order, ordered=True,
+    )
+    avg_acv = avg_acv.sort_values("Promotion Type")
+
+    fig_acv = px.bar(
+        avg_acv, x="Promotion Type", y="Average ACV", color="Promotion Type",
+        text_auto=".2s", color_discrete_map=promo_colors,
+    )
+    fig_acv.update_traces(textposition="outside")
+    chart_layout(fig_acv)
+    fig_acv.update_layout(showlegend=False)
+
+    return (
+        fmt_number(promo_count),
+        fmt_pct(effect_rate),
+        fmt_pct(win_rate_promo),
+        fmt_pct(win_rate_no_promo),
+        fig_wr,
+        fig_acv,
     )
 
 
@@ -789,24 +912,60 @@ app.clientside_callback(
 )
 
 
+_agent_result_lock = threading.Lock()
+_agent_result: dict = {}
+
+
 @app.callback(
-    [Output("chat-messages-store", "data", allow_duplicate=True),
-     Output("chat-typing", "data", allow_duplicate=True)],
+    Output("agent-poll", "disabled"),
     Input("chat-typing", "data"),
     State("chat-messages-store", "data"),
     prevent_initial_call=True,
 )
-def call_agent(typing, messages):
+def kick_off_agent(typing, messages):
     if not typing:
         raise dash.exceptions.PreventUpdate
+
     messages = list(messages or [])
-    try:
-        response_text = backend.chat_with_agent(messages)
-        messages.append({"role": "assistant", "content": response_text})
-    except Exception as exc:
-        logger.error("Chat error: %s", exc, exc_info=True)
-        messages.append({"role": "assistant", "content": f"Sorry, I encountered an error: {exc}"})
-    return messages, False
+
+    def _run():
+        try:
+            text = backend.chat_with_agent(messages)
+            with _agent_result_lock:
+                _agent_result["text"] = text
+        except Exception as exc:
+            logger.error("Chat error: %s", exc, exc_info=True)
+            with _agent_result_lock:
+                _agent_result["error"] = str(exc)
+
+    with _agent_result_lock:
+        _agent_result.clear()
+
+    threading.Thread(target=_run, daemon=True).start()
+    return False
+
+
+@app.callback(
+    [Output("chat-messages-store", "data", allow_duplicate=True),
+     Output("chat-typing", "data", allow_duplicate=True),
+     Output("agent-poll", "disabled", allow_duplicate=True)],
+    Input("agent-poll", "n_intervals"),
+    State("chat-messages-store", "data"),
+    prevent_initial_call=True,
+)
+def poll_agent_result(n, messages):
+    with _agent_result_lock:
+        if "text" not in _agent_result and "error" not in _agent_result:
+            raise dash.exceptions.PreventUpdate
+        result = dict(_agent_result)
+        _agent_result.clear()
+
+    messages = list(messages or [])
+    if result.get("error"):
+        messages.append({"role": "assistant", "content": f"Sorry, I encountered an error: {result['error']}"})
+    else:
+        messages.append({"role": "assistant", "content": result["text"]})
+    return messages, False, True
 
 
 @app.callback(

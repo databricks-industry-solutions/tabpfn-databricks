@@ -121,6 +121,20 @@ def get_account_target_summary() -> pd.DataFrame:
     """))
 
 
+def get_promotion_analysis() -> pd.DataFrame:
+    return _load_and_cache("promotion_analysis", lambda: _run_query(f"""
+        SELECT
+            o.opportunity_id, o.acv, o.stage, o.days_in_pipeline,
+            o.has_promotion, o.lead_source,
+            p.promotion_id, p.promotion_type, p.had_effect, p.applied_date,
+            CASE WHEN o.stage = 'Closed/Won' THEN 1 ELSE 0 END AS is_won,
+            a.segment, a.region
+        FROM {CATALOG}.{SCHEMA}.opportunities o
+        LEFT JOIN {CATALOG}.{SCHEMA}.promotions p ON o.opportunity_id = p.opportunity_id
+        LEFT JOIN {CATALOG}.{SCHEMA}.accounts a ON o.account_id = a.account_id
+    """))
+
+
 def clear_cache():
     _cache.clear()
     logger.info("Cache cleared")
@@ -141,5 +155,6 @@ def chat_with_agent(messages: list[dict]) -> str:
     response = client.responses.create(
         model=f"apps/{app_name}",
         input=messages,
+        timeout=600,
     )
     return response.output_text

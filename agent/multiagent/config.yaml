@@ -15,13 +15,17 @@ subagents:
       Query the Enterprise Sales Analytics Genie space for structured data
       analysis. Supports complex SQL with JOINs, CTEs, window functions, and
       aggregations in a single query. Use this for questions about sales
-      pipeline, revenue, accounts, reps, products, opportunity trends, and
-      quota attainment. Key schema notes: opportunities.stage values are
-      'Closed/Won', 'Closed/Lost', 'Negotiation', 'Qualification',
-      'Discovery', 'Proposal'. Use 'Closed/Won' for won deals. Monetary
-      columns: opportunity_products.line_acv (line item ACV),
-      accounts.annual_revenue_mm. There are 6 products, ~500 accounts,
-      ~3500 opportunities.
+      pipeline, revenue, accounts, reps, products, opportunity trends,
+      promotions, and quota attainment. Key schema notes:
+      opportunities.stage values are 'Closed/Won', 'Closed/Lost',
+      'Negotiation', 'Discovery', 'Demo'. Use 'Closed/Won' for won deals.
+      opportunities.has_promotion (boolean) flags promoted deals.
+      promotions table has promotion_type ('Discount', 'Delivery Support',
+      'Enablement') and had_effect (boolean). JOIN promotions ON
+      opportunity_id for promotion analysis. Monetary columns:
+      opportunity_products.line_acv (line item ACV),
+      accounts.annual_revenue_mm. There are 8 products, ~500 accounts,
+      ~3500 opportunities, ~350 promotions.
 
   - name: tabpfn
     type: mcp
