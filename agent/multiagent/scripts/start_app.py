@@ -23,6 +23,8 @@ from dotenv import load_dotenv
 
 BACKEND_READY = [r"Uvicorn running on", r"Application startup complete", r"Started server process"]
 FRONTEND_READY = [r"Server is running on http://localhost"]
+DASHBOARD_READY = [r"Dash is running on", r"Running on http://"]
+APPS_DIR = Path(__file__).resolve().parent.parent.parent / "apps"
 
 
 def check_port_available(port: int) -> bool:
@@ -35,7 +37,7 @@ def check_port_available(port: int) -> bool:
 
 
 class ProcessManager:
-    def __init__(self, port=8000, no_ui=False):
+    def __init__(self, port=8000, no_ui=False, dashboard=False):
         self.backend_process = None
         self.frontend_process = None
         self.backend_ready = False
@@ -45,6 +47,8 @@ class ProcessManager:
         self.frontend_log = None
         self.port = port
         self.no_ui = no_ui
+        self.dashboard = dashboard
+        self.frontend_port = None
 
     def check_ports(self):
         backend_port = self.port
@@ -103,9 +107,10 @@ class ProcessManager:
                         print(f"  API available at http://localhost:{self.port}")
                         print(f"{'=' * 50}\n")
                     elif self.backend_ready and self.frontend_ready:
+                        frontend_url = f"http://localhost:{self.frontend_port or self.port}"
                         print(f"\n{'=' * 50}")
                         print("  Both frontend and backend are ready!")
-                        print(f"  Open the frontend at http://localhost:{self.port}")
+                        print(f"  Open the frontend at {frontend_url}")
                         print(f"{'=' * 50}\n")
 
             process.wait()
@@ -141,6 +146,18 @@ class ProcessManager:
         )
         Path("temp-app-templates/e2e-chatbot-app-next").rename("e2e-chatbot-app-next")
         shutil.rmtree("temp-app-templates", ignore_errors=True)
+        return True
+
+    def _install_dashboard_deps(self):
+        """Sync the 'dashboard' dependency group into the venv."""
+        print("Syncing dashboard dependencies...")
+        result = subprocess.run(
+            ["uv", "sync", "--group", "dashboard"],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(f"Failed to install dashboard dependencies: {result.stderr}")
+            return False
         return True
 
     def start_process(self, cmd, name, log_file, patterns, cwd=None):
@@ -185,12 +202,27 @@ class ProcessManager:
         if not os.environ.get("DATABRICKS_APP_NAME"):
             self.check_ports()
 
+        self.frontend_port = int(
+            os.environ.get("CHAT_APP_PORT", os.environ.get("PORT", "3000"))
+        )
+
         if not self.no_ui:
-            if not self.clone_frontend_if_needed():
-                print("WARNING: Failed to clone frontend. Continuing with backend only.")
-                self.no_ui = True
+            if self.dashboard:
+                if not self._install_dashboard_deps():
+                    print("WARNING: Failed to install dashboard deps. Continuing with backend only.")
+                    self.no_ui = True
+                elif not os.environ.get("DATABRICKS_WAREHOUSE_ID"):
+                    print("ERROR: DATABRICKS_WAREHOUSE_ID must be set in .env for --dashboard mode.")
+                    return 1
+                else:
+                    os.environ["MULTIAGENT_ENDPOINT"] = f"http://localhost:{self.port}/invocations"
+                    os.environ["PORT"] = str(self.frontend_port)
             else:
-                os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
+                if not self.clone_frontend_if_needed():
+                    print("WARNING: Failed to clone frontend. Continuing with backend only.")
+                    self.no_ui = True
+                else:
+                    os.environ["API_PROXY"] = f"http://localhost:{self.port}/invocations"
 
         self.backend_log = open("backend.log", "w", buffering=1)
         if not self.no_ui:
@@ -206,20 +238,27 @@ class ProcessManager:
             )
 
             if not self.no_ui:
-                frontend_dir = Path("e2e-chatbot-app-next")
-                for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
-                    print(f"Running npm {desc}...")
-                    result = subprocess.run(
-                        cmd.split(), cwd=frontend_dir, capture_output=True, text=True,
+                if self.dashboard:
+                    self.frontend_process = self.start_process(
+                        [sys.executable, "app.py"],
+                        "frontend", self.frontend_log, DASHBOARD_READY,
+                        cwd=str(APPS_DIR),
                     )
-                    if result.returncode != 0:
-                        print(f"npm {desc} failed: {result.stderr}")
-                        return 1
+                else:
+                    frontend_dir = Path("e2e-chatbot-app-next")
+                    for cmd, desc in [("npm install", "install"), ("npm run build", "build")]:
+                        print(f"Running npm {desc}...")
+                        result = subprocess.run(
+                            cmd.split(), cwd=frontend_dir, capture_output=True, text=True,
+                        )
+                        if result.returncode != 0:
+                            print(f"npm {desc} failed: {result.stderr}")
+                            return 1
 
-                self.frontend_process = self.start_process(
-                    ["npm", "run", "start"], "frontend", self.frontend_log,
-                    FRONTEND_READY, cwd=frontend_dir,
-                )
+                    self.frontend_process = self.start_process(
+                        ["npm", "run", "start"], "frontend", self.frontend_log,
+                        FRONTEND_READY, cwd=frontend_dir,
+                    )
 
             while not self.failed.is_set():
                 time.sleep(0.1)
@@ -253,6 +292,10 @@ def main():
         usage="%(prog)s [OPTIONS]\n\nAll options are passed through to start-server.",
     )
     parser.add_argument("--no-ui", action="store_true", help="Run backend only, skip frontend UI")
+    parser.add_argument(
+        "--dashboard", action="store_true",
+        help="Use the Dash sales dashboard as the frontend instead of the chatbot UI",
+    )
     args, backend_args = parser.parse_known_args()
 
     port = 8000
@@ -264,7 +307,8 @@ def main():
                 pass
             break
 
-    sys.exit(ProcessManager(port=port, no_ui=args.no_ui).run(backend_args))
+    manager = ProcessManager(port=port, no_ui=args.no_ui, dashboard=args.dashboard)
+    sys.exit(manager.run(backend_args))
 
 
 if __name__ == "__main__":
