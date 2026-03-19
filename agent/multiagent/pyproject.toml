@@ -26,6 +26,7 @@ packages = ["agent_server", "scripts"]
 dev = [
     "hatchling>=1.27.0",
     "pytest>=7.0.0",
+    "databricks-sql-connector",
 ]
 dashboard = [
     "dash-bootstrap-components",
@@ -38,3 +39,4 @@ dashboard = [
 start-app = "scripts.start_app:main"
 start-server = "agent_server.start_server:main"
 agent-evaluate = "agent_server.evaluate_agent:evaluate"
+agent-evaluate-e2e = "agent_server.evaluate_e2e:evaluate"
