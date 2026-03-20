@@ -141,7 +141,26 @@ def clear_cache():
 
 
 def chat_with_agent(messages: list[dict]) -> str:
-    """Send conversation history to the multiagent and return the response."""
+    """Send conversation history to the multiagent and return the response.
+
+    When MULTIAGENT_ENDPOINT is set (local dev), POSTs directly to that URL.
+    Otherwise, calls the deployed Databricks App via DatabricksOpenAI.
+    """
+    endpoint = os.getenv("MULTIAGENT_ENDPOINT")
+    if endpoint:
+        import requests
+
+        resp = requests.post(endpoint, json={"input": messages}, timeout=600)
+        resp.raise_for_status()
+        data = resp.json()
+        parts = []
+        for item in data.get("output", []):
+            if item.get("type") == "message":
+                for part in item.get("content", []):
+                    if part.get("type") == "output_text":
+                        parts.append(part.get("text", ""))
+        return "\n".join(parts) or "No response"
+
     from databricks_openai import DatabricksOpenAI
 
     app_name = os.getenv("MULTIAGENT_APP_NAME")

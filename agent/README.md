@@ -66,12 +66,25 @@ The bundle (`databricks.yml`) deploys the app and grants it access to the Genie 
 
 ### 6. Evaluate the agent
 
+Two evaluation modes are available:
+
+**Conversation simulator** — multi-turn evaluation with generic quality scorers (completeness, safety, fluency, etc.):
+
 ```bash
 cd multiagent
 uv run agent-evaluate
 ```
 
-Runs a conversation simulator with MLflow scorers (completeness, safety, fluency, etc.) and logs results to your MLflow experiment.
+**End-to-end ground truth** — single-turn evaluation that pre-computes correct answers via SQL + direct TabPFN calls, then compares against the agent's outputs:
+
+```bash
+cd multiagent
+uv run agent-evaluate-e2e
+```
+
+Requires `DATABRICKS_WAREHOUSE_ID` in `.env`. See `multiagent/README.md` for scorer details and how to add test cases.
+
+Both commands log results to your MLflow experiment.
 
 ## Project structure
 
@@ -89,7 +102,8 @@ agent/
     │   ├── agent.py               # Orchestrator logic
     │   ├── utils.py               # MCP URL builder, auth helpers
     │   ├── start_server.py        # MLflow AgentServer entry point
-    │   └── evaluate_agent.py      # Conversation simulator + scorers
+    │   ├── evaluate_agent.py      # Conversation simulator + scorers
+    │   └── evaluate_e2e.py        # End-to-end ground-truth evaluation
     └── scripts/
         └── start_app.py           # Local dev launcher (backend + UI)
 ```
