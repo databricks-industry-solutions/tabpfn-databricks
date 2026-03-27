@@ -38,6 +38,40 @@ Additional subagent types (App agents, Serving Endpoints, MCP servers) can be ad
 
 `uv run agent-evaluate-e2e` runs a ground-truth evaluation that validates the full predictive workflow — from SQL data retrieval through TabPFN predictions to the final natural-language answer.
 
+```mermaid
+flowchart TB
+    tc["Test Case"]
+
+    subgraph agentExec ["Agent Execution"]
+        sup["Supervisor"]
+        genie["Genie: query_space + poll_response"]
+        tabpfn["TabPFN: fit_and_predict_inline"]
+        ans["Supervisor: final answer"]
+        sup --> genie --> tabpfn --> ans
+    end
+
+    subgraph gtSetup ["Ground Truth"]
+        sql["SQL Warehouse (direct, no Genie)"]
+        gtData["GT X_train, y_train"]
+        sql --> gtData
+    end
+
+    tc -->|"question"| sup
+    tc -->|"ground_truth_sql"| sql
+
+    ans --> trace["MLflow Trace"]
+
+    trace --> eval["mlflow.genai.evaluate"]
+    gtData --> eval
+
+    eval --> s1["tool_workflow"]
+    eval --> s2["training_data_quality"]
+    eval --> s3["prediction_accuracy"]
+    eval --> s4["answer_quality"]
+
+    s1 & s2 & s3 & s4 --> results["MLflow Evaluation Results"]
+```
+
 ### How it differs from `agent-evaluate`
 
 
@@ -58,6 +92,47 @@ Additional subagent types (App agents, Serving Endpoints, MCP servers) can be ad
 
 The evaluation applies four scorers to each agent trace:
 
+**tool_workflow**
+
+```mermaid
+flowchart LR
+    spans["Trace: tool call spans"] --> check["All 3 tools called in sequence?"]
+```
+
+**training_data_quality**
+
+```mermaid
+flowchart LR
+    agentTrain["Trace: agent X_train"] --> compare["Compare"]
+    gtTrain["Setup: GT X_train"] --> compare
+    compare --> check["Column overlap, row count, X/y aligned?"]
+```
+
+**prediction_accuracy**
+
+```mermaid
+flowchart LR
+    agentXtest["Trace: agent X_test"] --> resolve["Resolve agent columns"]
+    genieCols["Trace: Genie result columns"] --> resolve
+    resolve --> align["Align to shared columns"]
+    gtData["Setup: GT X_train + y_train"] --> align
+    align --> rerun["TabPFN direct call"]
+    agentPreds["Trace: agent predictions"] --> cmp["Compare"]
+    rerun --> gtPreds["GT predictions"]
+    gtPreds --> cmp
+    cmp --> classif["Classification: same top-ranked scenario?"]
+    cmp --> regr["Regression: all values within 50% tolerance?"]
+```
+
+The agent may use different features than the ground truth: Genie can return different columns, and the agent may drop constant-valued columns (e.g., `segment` when the query filters to a single segment). Before calling TabPFN, the scorer resolves which columns the agent actually kept, then subsets both GT training data and the agent's X_test to their shared columns.
+
+**answer_quality**
+
+```mermaid
+flowchart LR
+    ansText["Trace: final answer"] --> llm["LLM judge (Claude Sonnet)"]
+    llm --> check["Numeric predictions + logical recommendation?"]
+```
 
 | Scorer                    | What it checks                                                                                                                                                     |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
